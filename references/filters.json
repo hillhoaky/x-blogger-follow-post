@@ -1,0 +1,129 @@
+{
+  "version": 2,
+  "updated_at": "2026-09-23",
+  "mode": "semantic_review_required",
+  "keyword_policy": "关键词仅提醒检查；匹配或未匹配都不能直接决定发布。需检查正文、媒体及引用上下文。",
+  "rules": [
+    {
+      "id": "CN_EQUITY",
+      "decision": "skip",
+      "topic": "中国股市行情、个股、交易建议和评论",
+      "hints": [
+        "A股",
+        "上证",
+        "沪深",
+        "创业板",
+        "科创板",
+        "北交所",
+        "大A",
+        "港股",
+        "恒指",
+        "中概股"
+      ],
+      "boundary": "A股及以中国股票为核心的港股/中概股报道跳过；全球宏观中的附带提及不机械拦截；边界混合题材 review。"
+    },
+    {
+      "id": "CN_POLITICS",
+      "decision": "skip",
+      "topic": "以中国国内政治、党政人事、意识形态、政治争议或政治评论为主题",
+      "hints": [
+        "中共",
+        "政治局",
+        "党代会",
+        "习近平",
+        "李强",
+        "两会"
+      ],
+      "boundary": "姓名不是黑名单。核心为可核实跨境贸易、关税、利率或商品事实的财经报道另行判断；不强行包装政治评论。"
+    },
+    {
+      "id": "LOCAL_LOW_RELEVANCE",
+      "decision": "skip",
+      "topic": "服务中国本地生活/投资安排，未体现越南或东南亚财经价值",
+      "hints": [
+        "本地楼盘",
+        "学区房",
+        "打新",
+        "营业部"
+      ],
+      "boundary": "说明为何是本地题材；中国宏观数据、人民币、制造业和商品需求可能有跨境价值。"
+    },
+    {
+      "id": "PROMO_OR_CHAT",
+      "decision": "skip",
+      "topic": "营销引流、付费群/课程推广、纯个人闲聊、无财经信息的梗图",
+      "hints": [
+        "入群",
+        "私信领取",
+        "付费群",
+        "课程优惠"
+      ],
+      "boundary": "不把广告号召带入 IFXData；主要是推广则整帖跳过。"
+    },
+    {
+      "id": "MARKET_RELEVANT",
+      "decision": "publish_candidate",
+      "topic": "全球宏观、央行、外汇、黄金、能源、国际股票/科技、加密资产、东南亚财经",
+      "hints": [
+        "美联储",
+        "美元",
+        "黄金",
+        "原油",
+        "越南",
+        "东盟",
+        "通胀",
+        "就业",
+        "利率"
+      ],
+      "boundary": "指出具体市场事实或有来源观点；优先级低于明确排除项，不保证自动发布。"
+    },
+    {
+      "id": "CONTEXT_UNCLEAR",
+      "decision": "review",
+      "topic": "混合主题、身份不明、含糊传闻、时间/数字冲突或无法判断受众价值",
+      "hints": [],
+      "boundary": "补读原帖或必要原始资料；仍不明确则待复核，不编造关联。"
+    },
+    {
+      "id": "EVENT_DUPLICATE",
+      "decision": "skip",
+      "topic": "同一事件已预览或发布，本条没有新增事实",
+      "hints": [],
+      "boundary": "语义比较主体、事件、日期、核心数据和确认状态；新增数字、官方确认、纠错或实质进展可作为update。不能只按标题或event_key判重。"
+    },
+    {
+      "id": "STALE_BREAKING",
+      "decision": "review",
+      "topic": "超过6小时的突发新闻或时点不明",
+      "hints": [],
+      "boundary": "6小时为试行时效阈值；检查是否仍有价值或后续更新。长期分析不机械过期；单条待复核不阻塞其他稿件。"
+    }
+  ],
+  "examples": [
+    {
+      "source": "A股收盘，上证指数上涨",
+      "decision": "skip",
+      "rule": "CN_EQUITY"
+    },
+    {
+      "source": "中国党政人事安排评论",
+      "decision": "skip",
+      "rule": "CN_POLITICS"
+    },
+    {
+      "source": "中国制造业数据影响铜需求，附国际铜价变化",
+      "decision": "publish_candidate",
+      "rule": "MARKET_RELEVANT"
+    },
+    {
+      "source": "美联储利率决定与美元反应",
+      "decision": "publish_candidate",
+      "rule": "MARKET_RELEVANT"
+    },
+    {
+      "source": "只写习近平三个字，没有完整事件",
+      "decision": "review",
+      "rule": "CONTEXT_UNCLEAR"
+    }
+  ]
+}

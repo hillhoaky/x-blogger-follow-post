@@ -1,0 +1,4 @@
+interface:
+  display_name: "X博主跟随发帖"
+  short_description: "RSS发现博主新帖，筛选并改写为越南文，在IFXData越南版发布"
+  default_prompt: "使用 $x-blogger-follow-post 检查 fxtrader 的 RSS 新帖，过滤中国股市、中国政治和低相关内容，按当前 chat_preview 模式在对话展示合格成稿，遵守中英混排仅译中文、全英文译越南文和去水印规则，暂不提交 IFXData。"

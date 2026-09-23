@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "sources": {
+    "fxtrader": {
+      "handle": "fxtrader",
+      "profile_url": "https://x.com/fxtrader",
+      "feed_url": "https://rss.app/feeds/ar9gRF2tWDZD8ThY.xml",
+      "target_language": "vi",
+      "admin_scope": "vn",
+      "state_path": "~/Documents/Codex/skill-state/x-blogger-follow-post/fxtrader/state.json",
+      "first_run": "baseline_only"
+    }
+  },
+  "operations": {
+    "mode": "chat_preview",
+    "poll_interval_minutes": 10,
+    "max_outputs_per_run": 3,
+    "breaking_max_age_hours": 6,
+    "event_lookback_days": 7,
+    "report_timezone": "Asia/Ho_Chi_Minh",
+    "report_local_time": "00:00",
+    "report_period": "previous_calendar_day",
+    "publish_authorized": false,
+    "automation_id": "x",
+    "first_report_date": "2026-09-23"
+  }
+}
