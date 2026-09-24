@@ -14,6 +14,7 @@ import daily_report
 import patrol
 
 SOURCE = {"handle": "fxtrader", "feed_url": "https://rss.app/feeds/ar9gRF2tWDZD8ThY.xml"}
+FILTER_VERSION = queue.read_json(queue.ROOT / 'references/filters.json')['version']
 
 
 def rss(ids, body="news", handle="fxtrader"):
@@ -34,7 +35,7 @@ class WorkflowChecks(unittest.TestCase):
             path = Path(temp) / 'task.json'
             task = {'source_status_id':'100','target_language':'vi','admin_scope':'vn','publish_authorized':False,'preview_verified':True}
             queue.save_json(path, task)
-            record = {'status':'prepared','rule_id':'MARKET_RELEVANT','rule_version':2,'reason':'market news','x_verified':True,'relevance':'FX','event_key':'fed|rate|2026-09-23','key_facts':['rate unchanged'],'event_relation':'new','task_path':str(path)}
+            record = {'status':'prepared','rule_id':'MARKET_RELEVANT','rule_version':FILTER_VERSION,'reason':'market news','x_verified':True,'relevance':'FX','event_key':'fed|rate|2026-09-23','key_facts':['rate unchanged'],'event_relation':'new','task_path':str(path)}
             queue.mark(state, '100', record)
             queue.mark(state, '100', {'status':'previewed','reason':'preview QA passed','task_path':str(path)})
             self.assertFalse(queue.report(state)['pending'])
@@ -184,7 +185,7 @@ class WorkflowChecks(unittest.TestCase):
         state, _ = ingest(None, [100], latest=1)
         with self.assertRaises(ValueError):
             queue.mark(state, "100", {"status": "skipped"})
-        queue.mark(state, "100", {"status": "skipped", "reason": "中国股市", "rule_id": "CN_EQUITY", "rule_version": 2})
+        queue.mark(state, "100", {"status": "skipped", "reason": "中国股市", "rule_id": "CN_EQUITY", "rule_version": FILTER_VERSION})
         state, _ = ingest(state, [100])
         self.assertEqual(queue.report(state)["pending"], [])
         with self.assertRaises(ValueError):
@@ -196,7 +197,7 @@ class WorkflowChecks(unittest.TestCase):
             path = Path(temp) / "task.json"
             task = {"source_status_id": "100", "target_language": "vi", "admin_scope": "total", "publish_authorized": True}
             queue.save_json(path, task)
-            prepared = {"status": "prepared", "rule_id": "MARKET_RELEVANT", "rule_version": 2, "reason": "FX", "x_verified": True, "relevance": "USD market", "task_path": str(path), "event_key":"fed|rate|2026-09-23", "key_facts":["decision confirmed"], "event_relation":"new"}
+            prepared = {"status": "prepared", "rule_id": "MARKET_RELEVANT", "rule_version": FILTER_VERSION, "reason": "FX", "x_verified": True, "relevance": "USD market", "task_path": str(path), "event_key":"fed|rate|2026-09-23", "key_facts":["decision confirmed"], "event_relation":"new"}
             with self.assertRaises(ValueError):
                 queue.mark(state, "100", prepared)
             task["admin_scope"] = "vn"
