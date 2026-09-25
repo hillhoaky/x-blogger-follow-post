@@ -13,6 +13,8 @@ sys.dont_write_bytecode = True
 import rss_queue as queue
 import daily_report
 import patrol
+import filter_regression
+from datetime import datetime, timezone, timedelta
 
 SOURCE = {"handle": "fxtrader", "feed_url": "https://rss.app/feeds/ar9gRF2tWDZD8ThY.xml"}
 FILTER_VERSION = queue.read_json(queue.ROOT / 'references/filters.json')['version']
@@ -27,6 +29,180 @@ def rss(ids, body="news", handle="fxtrader"):
 def ingest(state, ids, latest=0, body="news"):
     items, issues = queue.parse_feed(rss(ids, body), SOURCE["handle"])
     return queue.ingest(state, SOURCE, items, issues, latest)
+
+
+def preview_task(status_id, partial=False):
+    return {'source_status_id':status_id, 'target_language':'vi', 'admin_scope':'vn',
+            'mode':'chat_preview', 'publish_authorized':False, 'preview_verified':not partial,
+            'source_text':'source text', 'training_preview_language':'zh-CN',
+            'training_draft_title':'标题', 'training_draft_body':'正文', 'training_edit_notes':['保留数字'],
+            'preview_progress':{'text_verified':True, 'media_verified':not partial,
+                                'media_pending_reason':'video output unsupported' if partial else ''}}
+
+
+def display_receipt(root):
+    path = root/'shown.md'
+    path.write_text('Offline fixture only: original text, draft, notes, source, labels, media status')
+    return {'displayed_in_chat':True, 'displayed_at':queue.now(), 'display_evidence':str(path)}
+
+
+def prepared_record(path):
+    return {'status':'prepared', 'reason':'verified market event', 'x_verified':True,
+            'rule_id':'MARKET_RELEVANT', 'rule_version':FILTER_VERSION, 'relevance':'FX',
+            'event_key':'fed|decision|2026-09-25', 'key_facts':['rate unchanged'],
+            'event_relation':'new', 'task_path':str(path)}
+
+
+class PreviewAndRetryChecks(unittest.TestCase):
+    def test_complete_rejects_unshown_unverified_and_missing_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            task, record = preview_task('100'), display_receipt(root)
+            queue.preview_fields(task, record)
+            for bad in [{**record, 'displayed_in_chat':False},
+                        {**record, 'display_evidence':str(root/'missing.md')},
+                        {**record, 'displayed_at':'2099-01-01T00:00:00Z'}]:
+                with self.assertRaises(ValueError):
+                    queue.preview_fields(task, bad)
+            task['preview_progress']['media_verified'] = False
+            with self.assertRaises(ValueError):
+                queue.preview_fields(task, record)
+            task['preview_progress'].update(text_verified=False, media_pending_reason='unsupported')
+            task['preview_verified'] = False
+            with self.assertRaises(ValueError):
+                queue.preview_fields(task, record, partial=True)
+
+    def test_partial_then_complete_preserves_event_and_counts_separately(self):
+        state, _ = ingest(None, [100, 110], latest=2)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); path = root/'task.json'
+            task = preview_task('100', partial=True)
+            queue.save_json(path, task)
+            partial = {**prepared_record(path), **display_receipt(root), 'status':'preview_partial',
+                       'block_kind':'capability', 'resume_condition':'verified video output available'}
+            queue.mark(state, '100', partial)
+            self.assertEqual(queue.report(state, compact=True)['waiting_for_change_count'], 1)
+            self.assertEqual([x['status_id'] for x in queue.report(state, compact=True)['due_candidates']], ['110'])
+            with self.assertRaises(ValueError):
+                queue.event_fields(state, '110', prepared_record(path))
+            self.assertTrue(queue.report(state)['events'])
+            with self.assertRaises(ValueError):
+                queue.mark(state,'100',{'status':'submitting','reason':'should not publish'})
+            with self.assertRaisesRegex(ValueError, 'resuming'):
+                queue.mark(state,'100',prepared_record(path))
+            queue.mark(state,'100',{**prepared_record(path),'resume_evidence':'offline fixture: verified media now available'})
+            task = preview_task('100'); queue.save_json(path, task)
+            queue.mark(state,'100',{'status':'previewed','reason':'all QA and display complete',
+                                  'task_path':str(path), **display_receipt(root)})
+            daily = daily_report.summarize(state, [], datetime.now(daily_report.HANOI).date())
+            self.assertEqual(len(daily['outcomes']['preview_partial']), 1)
+            self.assertEqual(len(daily['outcomes']['previewed']), 1)
+            self.assertEqual(len(daily['outcomes']['published']), 0)
+            self.assertEqual(state['items']['100']['task_path'], str(path))
+            self.assertIn('完整预览（新版验收）：1', daily_report.markdown(daily))
+
+    def test_manual_block_survives_elapsed_time_and_rss_changes(self):
+        state, _ = ingest(None, [100], latest=1)
+        queue.mark(state,'100',{'status':'blocked','reason':'video tool unavailable',
+                               'block_kind':'capability','resume_condition':'video workflow implemented'})
+        state, _ = ingest(state, [100], body='RSS changed')
+        self.assertFalse(queue.retry_due(state['items']['100'],datetime(2099,1,1,tzinfo=timezone.utc)))
+        self.assertEqual(queue.report(state,compact=True)['due_candidates'], [])
+        with self.assertRaisesRegex(ValueError, 'resume_evidence'):
+            queue.mark(state,'100',{'status':'blocked','reason':'relabel','block_kind':'transient'})
+
+    def test_transient_has_minimum_cooldown_and_can_become_due(self):
+        state, _ = ingest(None, [100], latest=1)
+        queue.mark(state,'100',{'status':'blocked','reason':'network timeout','block_kind':'transient'})
+        item = state['items']['100']
+        self.assertFalse(queue.retry_due(item))
+        self.assertTrue(queue.retry_due(item,datetime.now(timezone.utc)+timedelta(minutes=31)))
+        with self.assertRaises(ValueError):
+            queue.block_fields({'block_kind':'transient','retry_after':queue.now()})
+        with self.assertRaises(ValueError):
+            queue.block_fields({'block_kind':'capability','resume_condition':'fix tool','retry_after':queue.now()})
+
+    def test_partial_event_remains_visible_after_later_block(self):
+        state, _ = ingest(None, [100], latest=1)
+        item=state['items']['100']
+        item.update(status='blocked',event_key='event',key_facts=['fact'],history=[{'status':'preview_partial'}])
+        self.assertEqual(len(queue.report(state)['events']),1)
+
+    def test_patrol_capability_wait_is_idle_offline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); path=root/'state.json'; feed=root/'feed.xml'
+            state,_=ingest(None,[100],latest=1)
+            state['operations']={'first_report_date':datetime.now(daily_report.HANOI).date().isoformat()}
+            queue.mark(state,'100',{'status':'blocked','reason':'no video workflow','block_kind':'capability','resume_condition':'video output supported'})
+            queue.save_json(path,state); feed.write_bytes(rss([100],body='changed'))
+            cmd=[sys.executable,str(queue.ROOT/'scripts/patrol.py'),'--state',str(path),'--output-root',str(root/'out'),'--feed-file',str(feed)]
+            result=json.loads(subprocess.run(cmd,capture_output=True,text=True,check=True).stdout)
+            self.assertEqual(result['action'],'idle')
+            self.assertEqual(result['waiting_for_change_count'],1)
+
+    def test_regression_grader_detects_old_diplomacy_error_and_missing_cases(self):
+        cases=filter_regression.load_cases()
+        wrong=[{'id':'filter-01','decision':'skip','rule_id':'CN_POLITICS','reason':'old erroneous exclusion'}]
+        result=filter_regression.grade(cases,wrong)
+        self.assertFalse(result['passed'])
+        self.assertTrue(any(v['id']=='filter-01' and any('decision:' in e for e in v['errors']) for v in result['failures']))
+        self.assertTrue(any('missing decision' in v['errors'] for v in result['failures']))
+        self.assertFalse(filter_regression.grade(cases,wrong+wrong)['passed'])
+
+    def test_legacy_preview_not_relabelled_as_new_contract(self):
+        state,_=ingest(None,[100],latest=1)
+        state['items']['100'].update(status='previewed',history=[{'status':'previewed','at':queue.now()}])
+        result=daily_report.summarize(state,[],datetime.now(daily_report.HANOI).date())
+        self.assertIn('历史预览（未按新版验收）：1',daily_report.markdown(result))
+        self.assertIn('完整预览（新版验收）：0',daily_report.markdown(result))
+        self.assertFalse(queue.report(state,compact=True)['due_candidates'])
+
+
+class GlobalScopeChecks(unittest.TestCase):
+    def operations(self):
+        return {'mode':'publish','publish_authorized':True,'new_posts_only':True,
+                'publish_since':'2026-09-25T18:16:59Z','publish_floor_id':'2103511628285415696',
+                'admin_scope':'total','production_language':'zh-CN','country_post':['cn']}
+
+    def item(self, posted='2026-09-25T18:17:00Z', seen='2026-09-25T18:18:00Z'):
+        ms=int(datetime.fromisoformat(posted.replace('Z','+00:00')).timestamp()*1000)
+        sid=str((ms-1288834974657)<<22)
+        return {'status_id':sid,'status':'prepared','first_seen_at':seen,'history':[]}
+
+    def test_cutoff_excludes_late_discovered_old_posts(self):
+        ops=self.operations()
+        self.assertTrue(queue.within_publish_scope(self.item(),ops))
+        self.assertFalse(queue.within_publish_scope(self.item(posted='2026-09-25T17:00:00Z'),ops))
+        self.assertFalse(queue.within_publish_scope(self.item(seen='2026-09-25T18:00:00Z'),ops))
+        self.assertFalse(queue.within_publish_scope({'status_id':'123'},ops))
+
+    def test_global_submission_matches_authorization_and_qa(self):
+        item=self.item();sid=item['status_id'];state={'items':{sid:item}}
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'task.json'
+            task={'source_status_id':sid,'admin_scope':'total','target_language':'zh-CN',
+                  'publish_authorized':True,'country_post':['cn'],'source_posted_at':'2026-09-25T18:17:00Z',
+                  'publish_qa':{'source_verified':True,'text_verified':True,'media_verified':True}}
+            record={'status':'submitting','reason':'all QA passed','task_path':str(path)}
+            for overrides in [{'country_post':['vn']},{'target_language':'vi'},
+                              {'publish_qa':{'source_verified':True,'text_verified':True,'media_verified':False}},
+                              {'source_posted_at':'2026-09-25T17:00:00Z'}]:
+                queue.save_json(path,{**task,**overrides})
+                with self.assertRaises(ValueError):queue.mark(state,sid,record,self.operations())
+                self.assertEqual(item['status'],'prepared')
+            queue.save_json(path,task);queue.mark(state,sid,record,self.operations())
+            self.assertEqual(item['status'],'submitting')
+            task.update(newsfeed_id='999',verification={'scope':'total','title':True,'body':True,'label':True,'important':True,'media_order':True,'evidence':'offline fixture only'})
+            queue.save_json(path,task)
+            queue.mark(state,sid,{'status':'published','reason':'Global verified','task_path':str(path)},self.operations())
+            self.assertEqual(item['status'],'published')
+
+    def test_cutoff_does_not_hide_uncertain_recovery(self):
+        item=self.item(posted='2026-09-24T17:00:00Z');item['status']='publish_uncertain'
+        state={'items':{item['status_id']:item},'operations':self.operations()}
+        result=queue.report(state,compact=True)
+        self.assertEqual(len(result['recovery_only']),1)
+        self.assertEqual(result['due_candidates'],[])
 
 
 class WorkflowChecks(unittest.TestCase):
@@ -56,11 +232,11 @@ class WorkflowChecks(unittest.TestCase):
         state, _ = ingest(None, [100], latest=1)
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / 'task.json'
-            task = {'source_status_id':'100','target_language':'vi','admin_scope':'vn','publish_authorized':False,'preview_verified':True}
+            task = preview_task('100')
             queue.save_json(path, task)
             record = {'status':'prepared','rule_id':'MARKET_RELEVANT','rule_version':FILTER_VERSION,'reason':'market news','x_verified':True,'relevance':'FX','event_key':'fed|rate|2026-09-23','key_facts':['rate unchanged'],'event_relation':'new','task_path':str(path)}
             queue.mark(state, '100', record)
-            queue.mark(state, '100', {'status':'previewed','reason':'preview QA passed','task_path':str(path)})
+            queue.mark(state, '100', {'status':'previewed','reason':'preview QA passed','task_path':str(path), **display_receipt(Path(temp))})
             self.assertFalse(queue.report(state)['pending'])
             task['publish_authorized'] = True
             queue.save_json(path, task)

@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "filter_version": 3,
+  "cases": [
+    {
+      "id": "filter-01",
+      "kind": "filter",
+      "origin": "historical_summary",
+      "source_status_id": "2102805124062314859",
+      "input": {
+        "text": "贝森特与何立峰讨论中美经济关系，为领导人会晤做准备",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "publish_candidate",
+        "rule_id": "INTERNATIONAL_RELATIONS"
+      }
+    },
+    {
+      "id": "filter-02",
+      "kind": "filter",
+      "origin": "historical_summary",
+      "source_status_id": "2102924733515964903",
+      "input": {
+        "text": "习近平抵达美国安德鲁斯空军基地发表书面讲话",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "publish_candidate",
+        "rule_id": "INTERNATIONAL_RELATIONS"
+      }
+    },
+    {
+      "id": "filter-03",
+      "kind": "filter",
+      "origin": "historical_summary",
+      "source_status_id": "2102900488157143332",
+      "input": {
+        "text": "特朗普迎接习近平的红地毯、礼炮和飞越仪式",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "publish_candidate",
+        "rule_id": "INTERNATIONAL_RELATIONS"
+      }
+    },
+    {
+      "id": "filter-04",
+      "kind": "filter",
+      "origin": "historical_summary",
+      "source_status_id": "2102943383895605460",
+      "input": {
+        "text": "腾讯QClaw暂停注册并公告停运",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "skip",
+        "rule_id": "CN_COMPANY"
+      }
+    },
+    {
+      "id": "filter-05",
+      "kind": "filter",
+      "origin": "historical_summary",
+      "source_status_id": "2102983664380625371",
+      "input": {
+        "text": "Mobility Global预测放宽美国限制后中国汽车制造商到2038年在美年销量可达170万辆",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "skip",
+        "rule_id": "CN_COMPANY"
+      }
+    },
+    {
+      "id": "filter-06",
+      "kind": "filter",
+      "origin": "historical_summary",
+      "source_status_id": "2103125138900426776",
+      "input": {
+        "text": "华为余承东巡店并宣传鸿蒙智行及旗下汽车品牌业务动态",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "skip",
+        "rule_id": "CN_COMPANY"
+      }
+    },
+    {
+      "id": "filter-07",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "source_status_id": null,
+      "input": {
+        "text": "A股收盘，上证指数上涨",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "skip",
+        "rule_id": "CN_EQUITY"
+      }
+    },
+    {
+      "id": "filter-08",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "source_status_id": null,
+      "input": {
+        "text": "中国党政人事安排评论",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "skip",
+        "rule_id": "CN_POLITICS"
+      }
+    },
+    {
+      "id": "filter-09",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "source_status_id": null,
+      "input": {
+        "text": "中国制造业数据影响铜需求，附国际铜价变化",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "publish_candidate",
+        "rule_id": "MARKET_RELEVANT"
+      }
+    },
+    {
+      "id": "filter-10",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "source_status_id": null,
+      "input": {
+        "text": "美联储利率决定与美元反应",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "publish_candidate",
+        "rule_id": "MARKET_RELEVANT"
+      }
+    },
+    {
+      "id": "filter-11",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "source_status_id": null,
+      "input": {
+        "text": "只写习近平三个字，没有完整事件",
+        "context": "案例摘要；假定原帖全文与摘要相符，不进行线上核实。"
+      },
+      "expected": {
+        "decision": "review",
+        "rule_id": "CONTEXT_UNCLEAR"
+      }
+    },
+    {
+      "id": "macro-company-mention",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "input": {
+        "text": "中美经贸代表讨论整体关税安排，报道以一家中国汽车公司为行业例子，主体为跨国贸易政策。"
+      },
+      "expected": {
+        "decision": "publish_candidate",
+        "rule_id": "INTERNATIONAL_RELATIONS"
+      }
+    },
+    {
+      "id": "unknown-company-origin",
+      "kind": "filter",
+      "origin": "synthetic_boundary",
+      "input": {
+        "text": "某中文名称公司宣布海外扩张；现有资料没有注册地、国别或公司身份信息。"
+      },
+      "expected": {
+        "decision": "review",
+        "rule_id": "CONTEXT_UNCLEAR"
+      }
+    },
+    {
+      "id": "ports-repeat",
+      "kind": "event",
+      "origin": "historical_summary",
+      "source_status_id": "2103030872060625379",
+      "input": {
+        "previous": "9月14日至20日港口吞吐量727.9万标箱，同比增长9%。",
+        "current": "9月14日至20日港口吞吐量727.9万标箱，同比增长9%。",
+        "context": "与已预览2103030448637313427相同，仅帖子ID变化。"
+      },
+      "expected": {
+        "event_relation": "duplicate",
+        "has_incremental_facts": false
+      }
+    },
+    {
+      "id": "paraphrase-repeat",
+      "kind": "event",
+      "origin": "synthetic_boundary",
+      "input": {
+        "previous": "央行维持利率在4%。",
+        "current": "央行利率保持4%，本次未调整。",
+        "context": "同一机构、同一次决议、同一日期，无其他信息。"
+      },
+      "expected": {
+        "event_relation": "duplicate",
+        "has_incremental_facts": false
+      }
+    },
+    {
+      "id": "official-confirmation",
+      "kind": "event",
+      "origin": "synthetic_boundary",
+      "input": {
+        "previous": "媒体引述匿名人士称双方可能达成关税协议。",
+        "current": "双方发布联合声明，正式确认已达成关税协议。",
+        "context": "同一轮谈判，确认状态发生变化。"
+      },
+      "expected": {
+        "event_relation": "update",
+        "has_incremental_facts": true
+      }
+    },
+    {
+      "id": "new-period-data",
+      "kind": "event",
+      "origin": "synthetic_boundary",
+      "input": {
+        "previous": "9月14日至20日港口吞吐量727.9万标箱。",
+        "current": "9月21日至27日港口吞吐量730万标箱。",
+        "context": "同一机构的下一统计期例行数据。"
+      },
+      "expected": {
+        "event_relation": "new",
+        "has_incremental_facts": false
+      }
+    }
+  ]
+}

@@ -1,11 +1,15 @@
 ---
 name: x-blogger-follow-post
-description: 通过 RSS 发现指定 X 博主的新帖，按东南亚受众需求过滤，将正文及图片改为越南文，在 IFXData Vietnam Newsfeed 发布并回读验证。用于“x博主跟随发帖”、fxtrader 跟帖、RSS 新帖检查和过滤库维护；单个指定 X 帖子的一次性发布使用 x-newsfeed-post。
+description: 通过 RSS 发现指定 X 博主的新帖，核对原帖、过滤与事件去重，生成中文训练预览，或按明确授权在 IFXData Global 发布中文、在 Vietnam 发布越南文并回读验证。用于“x博主跟随发帖”、fxtrader 跟帖、RSS 新帖检查和过滤库维护；单个指定 X 帖子的一次性发布使用 x-newsfeed-post。
 ---
 
-# X 博主跟随发帖
+# IFXData X 跟帖助手
 
-RSS 发现更新 → 对应 X 原帖 → 过滤 → 越南文改写与图片 PS → IFXData **Vietnam 版本**发布 → 回读记录。默认 `@fxtrader`，配置见 [sources.json](references/sources.json)。
+RSS 发现更新 → 核对 X 原帖 → 过滤与事件去重 → 正文及图片处理 → 对话预览或授权发布 → 回读记录。默认关闭发布；Global 中文与 Vietnam 越南文按各自路由执行。默认 `@fxtrader`，配置见 [sources.json](references/sources.json)。
+
+## 当前发布目标（优先于下文旧训练/Vietnam默认）
+
+运行目标以 `sources.json` 的 operations 为准。`mode:publish` 且 `admin_scope:total` 时，按 [global-publishing.md](references/global-publishing.md) 将授权起点后的新帖发布为 Global 中文原稿。旧训练稿不补发、不更改历史状态。此模式覆盖下文 chat_preview、Vietnam、越南文图片的默认设置；预览状态契约只用于明确要求的预览，发布必须通过独立 publish_qa。
 
 ## 常规巡航入口
 
@@ -36,9 +40,9 @@ RSS 发现更新 → 对应 X 原帖 → 过滤 → 越南文改写与图片 PS 
 
 ## 2. 原帖核对与过滤
 
-只对 RSS 队列中的候选打开精确 status URL。核对作者、ID、正文、时间、引用/转推上下文和全部媒体。登录失败、删除、正文截断、缺图或视频不可读取时记 `blocked`，不凭 RSS 摘要补写。非该博主链接记录异常，不能当其原创发布。
+只对 RSS 队列中的候选打开精确 status URL。核对作者、ID、正文、时间、引用/转推上下文和全部媒体。登录失败、删除、正文截断、缺图或关键事实依赖的媒体不可读取时记 `blocked`，不凭 RSS 摘要补写。文字能独立核准但媒体成品未完成时可展示部分预览，按 [preview-state.md](references/preview-state.md) 记录。非该博主链接记录异常，不能当其原创发布。
 
-浏览器核对只提取目标帖的正文、时间、引用和媒体区域；不反复输出评论、推荐、趋势等整页内容。使用有上限的加载等待；同一故障本轮只重试一次，失败项至少30分钟后重试。
+浏览器核对只提取目标帖的正文、时间、引用和媒体区域；不反复输出评论、推荐、趋势等整页内容。使用有上限的加载等待；暂时故障本轮只重试一次，再冷却至少30分钟。能力、访问或编辑依据缺失的阻塞，按 [preview-state.md](references/preview-state.md) 等待具体条件变化，不定时重试。
 
 读 [filters.json](references/filters.json) 和 [editorial.md](references/editorial.md)。关键词只是提示；按完整主题判断，包括图中文字。
 
@@ -55,11 +59,11 @@ RSS 发现更新 → 对应 X 原帖 → 过滤 → 越南文改写与图片 PS 
 
 逐图检查并保持媒体顺序，按用户指定规则 PS：**中英混排且两者均为主内容时，只把中文改成越南文，英文原样保留；全英文主内容改成越南文；全中文改成越南文。英文正文中只有零星中文界面标签时，正文及标签一起越南文化。去除来源图片上的水印。** 原始 logo/图表图例等有信息意义的标记与叠加水印区分，不能误删数据。无文字也无水印的照片保留；只有水印的图也需清除水印。完整规则见 [editorial.md](references/editorial.md)。用图像编辑工具完成 PS 和逐张视觉 QA 后直接套 Image1；本地化图片保持原始画布紧凑，不为页脚手工扩展底部空白或生成 `-padded` 版本。Image1 渲染器自行加入固定的短过渡区，最终 QA 必须检查正文与页脚之间没有大面积空白。
 
-复用 `prepare_task.py`，逐张定 `keep/translate`，记录 `target_language:vi`、`admin_scope:vn`、`source_status_id`、标题/正文/标签与有序图片清单。默认 `Image1`、Important `Yes`，不加自制水印/页脚。预览不依赖后台可用；标签可按已有标签记录准备，不为预览创建标签。纯文字帖按 0 图片处理，不伪造图片；视频/动图超出现有图片流程时记待处理。
+复用 `prepare_task.py`，逐张定 `keep/translate`，记录 `target_language:vi`、`admin_scope:vn`、`source_status_id`、标题/正文/标签与有序图片清单。默认 `Image1`、Important `Yes`，不加自制水印/页脚。预览不依赖后台可用；标签可按已有标签记录准备，不为预览创建标签。纯文字帖按 0 图片处理，不伪造图片；视频/动图超出现有图片流程时记 capability 媒体待处理；不阻止已独立核准文字的部分预览。
 
 ## 4. 对话预览与 Vietnam 发布
 
-当前模式完成后，在对话依次展示：原帖原文、训练语言标题/正文、逐条修改理由、原帖链接、按顺序排列的处理后图片、拟用标签与必要的处理说明。图片必须实际显示，不能只报“已完成PS”。记录 `previewed`；不伪填 Newsfeed ID，不把预览计作发布。单帖原帖/图片/PS受阻则记原因、继续后面的合格帖，不让单条卡住整轮。训练阶段不调用后台/API做标签、查重或发布dry-run；使用已有标签缓存和本地账本，缺少标签记录时明确写拟用标签。`task.json` 同时保存 `training_preview_language`、`training_draft_title`、`training_draft_body`、`training_edit_notes` 和未来发布用的越南文稿字段。
+当前模式完成后，在对话依次展示：原帖原文、训练语言标题/正文、逐条修改理由、原帖链接、按顺序排列的处理后图片、拟用标签与必要的处理说明。图片必须实际显示，不能只报“已完成PS”。按 [preview-state.md](references/preview-state.md) 先展示再记回执：全部文字与媒体完成记 `previewed`，文字完成但媒体待处理记 `preview_partial`。两者均占本轮3条展示额度；不伪填 Newsfeed ID，不把预览计作发布。单帖原帖/图片/PS受阻则记原因、继续后面的合格帖，不让单条卡住整轮。训练阶段不调用后台/API做标签、查重或发布dry-run；使用已有标签缓存和本地账本，缺少标签记录时明确写拟用标签。`task.json` 同时保存 `training_preview_language`、`training_draft_title`、`training_draft_body`、`training_edit_notes` 和未来发布用的越南文稿字段。
 
 用户明确授权实际后台发布后，才读 [vietnam-publishing.md](references/vietnam-publishing.md)。使用已核实路由的 **Vietnam 专用 API helper**，页面作为备用；通用 helper 涉及 Global，不能直接用于本流程。当前 chat_preview 禁止写入，API 核验不阻塞预览。
 
@@ -71,4 +75,4 @@ RSS 发现更新 → 对应 X 原帖 → 过滤 → 越南文改写与图片 PS 
 
 每日按 [operations.md](references/operations.md) 生成报告，严格区分已预览与已发布。报告发现数、预览数、发布数、跳过原因和待处理项；发布项列 Vietnam Newsfeed ID、标题、原帖链接、标签、图片数/样式。检测失败或发布未确认不得报成功。
 
-用户反馈新规则后修改过滤库或编辑库的对应条目/版本，加说明边界的例子。被用户纠正的历史分类另存 filter_reassessment 和 feedback_history，保留原始处理历史；后续解释这些旧帖时以修正分类为准，不把候选说成已预览。旧的跳过记录不自动重发。运行脚本自检和 skill validator；维护 skill 不创建测试 Newsfeed。
+用户反馈新规则后修改过滤库或编辑库的对应条目/版本，加说明边界的例子。被用户纠正的历史分类另存 filter_reassessment 和 feedback_history，保留原始处理历史；后续解释这些旧帖时以修正分类为准，不把候选说成已预览。旧的跳过记录不自动重发。筛选或去重规则变更时，按 [filter-regression.md](references/filter-regression.md) 先对固定案例作语义判定，再运行评分器对照答案；不能用关键词分类器代替语义测试。运行脚本自检和 skill validator；维护 skill 不创建测试 Newsfeed。

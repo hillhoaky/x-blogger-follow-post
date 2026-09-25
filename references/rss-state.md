@@ -19,9 +19,9 @@ python3 "$SKILL/scripts/rss_queue.py" probe --bootstrap-latest 1
 
 ## 状态
 
-`baseline` / `skipped` / `previewed` / `published` 为自动处理终态；`discovered` / `review` / `blocked` / `prepared` 是待处理；`submitting` / `publish_uncertain` 只能回读恢复。发布前把任务文件、图片和记录放在共享账本附近的 `posts/<id>/`，不要仅留临时目录。
+`baseline` / `skipped` / `previewed` / `published` 为自动处理终态；`discovered` / `review` / `blocked` / `prepared` / `preview_partial` 是待处理；`submitting` / `publish_uncertain` 只能回读恢复。发布前把任务文件、图片和记录放在共享账本附近的 `posts/<id>/`，不要仅留临时目录。
 
-网络失败、空 feed、坏 XML、错误来源不推进状态；报错不是“无新帖”。部分无法解析的条目出现在 `feed_issues`，需要报告。重试只做一次；仍失败留待下一次获准检查。RSS 是有限窗口，长时间停机可能漏掉已滚出 feed 的帖子，不能声称历史完整。
+网络失败、空 feed、坏 XML、错误来源不推进状态；报错不是“无新帖”。部分无法解析的条目出现在 `feed_issues`，需要报告。暂时失败只重试一次，再按至少30分钟冷却；非暂时阻塞按 [preview-state.md](preview-state.md) 等待具体条件变化。RSS 是有限窗口，长时间停机可能漏掉已滚出 feed 的帖子，不能声称历史完整。
 
 同 ID 的 RSS 指纹变化只更新缓存，不重建候选。基线、跳过、预览、发布终态不自动复核或提醒。只有尚未完成的候选设置 `source_changed`，在到期处理该候选时核对 X，确认后记录 `source_change_reviewed:true`；不能因字段变化突破重试冷却。不要把 RSS 时间当权威修订时间。旧帖复核由用户明确指令触发。
 
@@ -58,4 +58,6 @@ python3 "$SKILL/scripts/rss_queue.py" mark --id 123 --record /absolute/result.js
 账本原子写入并加短时文件锁；跨任务不得并发发布同一博主。用现有 heartbeat 承接后续调度，避免重复创建任务导致竞争。
 
 
-当前 chat_preview 模式：prepared 后完成图片和正文 QA，展示后使用 `status:previewed`，task 必须有 `publish_authorized:false` 和 `preview_verified:true`。即使旧任务误留 publish_authorized:true，脚本仍阻止提交；只有新用户明确授权的单条 override 或已切换的正式发布模式才可提交。probe 结果在账本旁 runs/ 中留运行日志供日报使用。
+当前 chat_preview 模式：新增完整/部分预览必须遵守 [preview-state.md](preview-state.md) 的分项 QA 与实际展示回执契约。`preview_partial` 保留待处理状态和事件事实，媒体能力阻塞不会定时重试；完成媒体后先 prepared，再完整展示并记 previewed。旧预览历史不自动迁移为新版通过。
+
+即使旧任务误留 publish_authorized:true，脚本仍阻止提交；只有新用户明确授权的单条 override 或已切换的正式发布模式才可提交。probe 结果在账本旁 runs/ 中留运行日志供日报使用。

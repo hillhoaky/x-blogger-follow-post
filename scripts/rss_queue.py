@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_FEED = 8 * 1024 * 1024
 TERMINAL = {"baseline", "skipped", "previewed", "published"}
 RECOVERY = {"submitting", "publish_uncertain"}
+EVENT_STATES = {"prepared", "preview_partial", "previewed", "published"} | RECOVERY
+MANUAL_BLOCKS = {"capability", "access", "editorial"}
 
 
 def now():
@@ -169,11 +171,26 @@ def ingest(state, source, items, issues, latest=0):
     return state, discovered
 
 
+def within_publish_scope(item, operations):
+    if operations.get("mode") != "publish" or not operations.get("new_posts_only"):
+        return True
+    try:
+        cutoff = datetime.fromisoformat(operations["publish_since"].replace("Z", "+00:00"))
+        seen = datetime.fromisoformat(item["first_seen_at"].replace("Z", "+00:00"))
+        # X snowflake time also excludes delayed RSS discovery of pre-authorization posts.
+        posted = datetime.fromtimestamp(((int(item["status_id"]) >> 22) + 1288834974657) / 1000, timezone.utc)
+        return seen.tzinfo is not None and cutoff.tzinfo is not None and seen >= cutoff and posted >= cutoff and int(item["status_id"]) > int(operations["publish_floor_id"])
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return False
+
+
 def retry_due(item, current=None):
     current = current or datetime.now(timezone.utc)
     result = item.get("last_result", {})
+    if result.get("block_kind") in MANUAL_BLOCKS:
+        return False
     value = result.get("retry_after") or item.get("retry_after")
-    if not value and item["status"] == "blocked" and result.get("at"):
+    if not value and item["status"] in {"blocked", "preview_partial"} and result.get("at"):
         try:
             value = (datetime.fromisoformat(result["at"].replace("Z", "+00:00")) + timedelta(minutes=30)).isoformat()
         except ValueError:
@@ -194,11 +211,13 @@ def report(state, discovered=None, compact=False):
         counts[item["status"]] = counts.get(item["status"], 0) + 1
     if compact:
         pending = [v for v in ordered if v["status"] not in TERMINAL | RECOVERY]
-        due = [v for v in pending if retry_due(v)]
+        due = [v for v in pending if retry_due(v) and within_publish_scope(v, state.get("operations", {}))]
         keys = ["status_id", "source_url", "status", "source_changed", "task_path"]
         return {"rss": "ok", "new_ids": discovered or [],
                 "due_candidates": [{k: v[k] for k in keys if k in v} for v in due],
                 "deferred_count": len(pending) - len(due),
+                "outside_publish_scope_count": sum(not within_publish_scope(v, state.get("operations", {})) for v in pending),
+                "waiting_for_change_count": sum(v.get("last_result", {}).get("block_kind") in MANUAL_BLOCKS for v in pending),
                 "recovery_only": [{k: v[k] for k in keys if k in v} for v in ordered if v["status"] in RECOVERY],
                 "feed_issues": state.get("feed_issues", [])}
     return {"handle": state["handle"], "new_ids": discovered or [], "counts": counts,
@@ -206,7 +225,7 @@ def report(state, discovered=None, compact=False):
             "recovery_only": [v for v in ordered if v["status"] in RECOVERY],
             "changed_ids": [v["status_id"] for v in ordered if v.get("source_changed") and v["status"] not in TERMINAL],
             "events": [{k: v.get(k) for k in ["status_id", "status", "event_key", "key_facts", "event_at", "source_url"]}
-                       for v in ordered if v.get("event_key") and v["status"] in {"prepared", "previewed", "published"} | RECOVERY],
+                       for v in ordered if v.get("event_key") and event_visible(v)],
             "feed_issues": state.get("feed_issues", [])}
 
 
@@ -215,17 +234,21 @@ def check_task(record, item, published=False):
     if not task_path.is_file():
         raise ValueError("existing per-post task_path required")
     task = read_json(task_path)
-    if task.get("admin_scope") != "vn" or task.get("target_language") != "vi" or str(task.get("source_status_id")) != item["status_id"]:
-        raise ValueError("task must match status ID, vi language, and vn admin scope")
+    if (task.get("admin_scope"), task.get("target_language")) not in {("vn", "vi"), ("total", "zh-CN")} or str(task.get("source_status_id")) != item["status_id"]:
+        raise ValueError("task must match status ID and supported scope/language pair")
     if published:
         verification = task.get("verification", {})
         if not str(task.get("newsfeed_id", "")).isdigit() or int(task["newsfeed_id"]) < 1:
-            raise ValueError("verified Vietnam Newsfeed ID required")
-        if verification.get("scope") != "vn" or not verification.get("evidence"):
-            raise ValueError("Vietnam readback evidence required")
+            raise ValueError("verified scoped Newsfeed ID required")
+        if verification.get("scope") != task["admin_scope"] or not verification.get("evidence"):
+            raise ValueError("matching scoped readback evidence required")
         if any(verification.get(key) is not True for key in ["title", "body", "label", "important", "media_order"]):
             raise ValueError("all actual readback checks must pass")
     return task
+
+
+def event_visible(item):
+    return item["status"] in EVENT_STATES or any(e.get("status") == "preview_partial" for e in item.get("history", []))
 
 
 def event_fields(state, status_id, record):
@@ -234,7 +257,7 @@ def event_fields(state, status_id, record):
         raise ValueError("event_key and nonempty key_facts required")
     if relation not in {"new", "update"}:
         raise ValueError("prepared content must be a new event or substantive update")
-    related = [v for k, v in state["items"].items() if k != status_id and v.get("event_key") == key and v["status"] in {"prepared", "previewed", "published"} | RECOVERY]
+    related = [v for k, v in state["items"].items() if k != status_id and v.get("event_key") == key and event_visible(v)]
     normalized = lambda values: {" ".join(v.casefold().split()) for v in values}
     old = normalized([f for v in related for f in v.get("key_facts", [])])
     additions = normalized(facts) - old
@@ -249,15 +272,73 @@ def event_fields(state, status_id, record):
     return {"event_key": key, "key_facts": facts, "event_relation": relation, "incremental_facts": record.get("incremental_facts", []), "related_status_ids": record.get("related_status_ids", []), "event_at": now()}
 
 
+def aware_time(value, field):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError(f"{field} must be an ISO timestamp with timezone") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} must include timezone")
+    return parsed
+
+
+def block_fields(record):
+    kind = record.get("block_kind")
+    if kind not in {"transient"} | MANUAL_BLOCKS:
+        raise ValueError("block_kind required: transient/capability/access/editorial")
+    if kind in MANUAL_BLOCKS:
+        if not isinstance(record.get("resume_condition"), str) or not record["resume_condition"].strip():
+            raise ValueError("non-transient block requires concrete resume_condition")
+        if record.get("retry_after"):
+            raise ValueError("non-transient block must not set retry_after")
+        return {"block_kind": kind, "resume_condition": record["resume_condition"], "retry_after": None}
+    minimum = datetime.now(timezone.utc) + timedelta(minutes=30)
+    retry = aware_time(record["retry_after"], "retry_after") if record.get("retry_after") else minimum
+    if retry < minimum:
+        raise ValueError("transient retry_after must be at least 30 minutes from now")
+    return {"block_kind": kind, "retry_after": retry.isoformat()}
+
+
+def preview_fields(task, record, partial=False):
+    """Validate declared QA plus a saved display receipt; cannot observe chat delivery."""
+    progress = task.get("preview_progress", {})
+    if task.get("publish_authorized") is not False or task.get("mode") != "chat_preview":
+        raise ValueError("preview requires chat_preview and publish_authorized:false")
+    if progress.get("text_verified") is not True:
+        raise ValueError("preview requires verified text")
+    for key in ("source_text", "training_preview_language", "training_draft_title", "training_draft_body", "training_edit_notes"):
+        if not task.get(key):
+            raise ValueError(f"preview requires {key}")
+    if record.get("displayed_in_chat") is not True:
+        raise ValueError("acknowledge actual chat display before marking preview")
+    shown = aware_time(record.get("displayed_at"), "displayed_at")
+    if shown > datetime.now(timezone.utc):
+        raise ValueError("displayed_at cannot be in the future")
+    receipt = Path(record.get("display_evidence") or "").expanduser()
+    if not receipt.is_absolute() or not receipt.is_file() or not receipt.read_text(encoding="utf-8").strip():
+        raise ValueError("nonempty absolute display_evidence file required")
+    if partial:
+        if progress.get("media_verified") is not False or not progress.get("media_pending_reason"):
+            raise ValueError("partial preview requires media_verified:false and media_pending_reason")
+        if task.get("preview_verified") is not False:
+            raise ValueError("partial preview cannot claim completed preview QA")
+    elif progress.get("media_verified") is not True or task.get("preview_verified") is not True:
+        raise ValueError("complete preview requires text and all media QA")
+    return {"preview_contract_version": 1, "preview_progress": dict(progress),
+            "displayed_at": shown.isoformat(), "display_evidence": str(receipt)}
+
+
 def mark(state, status_id, record, operations=None):
     if operations is None:
         operations = read_json(ROOT / "references/sources.json").get("operations", {})
     item = state["items"][status_id]
     previous, target = item["status"], record.get("status")
-    allowed = {"discovered": {"skipped", "review", "blocked", "prepared"},
-               "review": {"review", "blocked", "skipped", "prepared"},
-               "blocked": {"review", "blocked", "skipped", "prepared"},
-               "prepared": {"review", "blocked", "submitting", "previewed"},
+    fields = {}
+    allowed = {"discovered": {"skipped", "review", "blocked", "prepared", "preview_partial"},
+               "review": {"review", "blocked", "skipped", "prepared", "preview_partial"},
+               "blocked": {"review", "blocked", "skipped", "prepared", "preview_partial"},
+               "prepared": {"review", "blocked", "submitting", "previewed", "preview_partial"},
+               "preview_partial": {"review", "blocked", "prepared", "preview_partial", "previewed"},
                "previewed": {"submitting"},
                "submitting": {"publish_uncertain", "published"},
                "publish_uncertain": {"published"}}
@@ -266,20 +347,26 @@ def mark(state, status_id, record, operations=None):
         raise ValueError(f"forbidden transition {previous} -> {target}; never reset uncertain/terminal posts")
     if not str(record.get("reason", "")).strip():
         raise ValueError("concrete reason required")
-    if target in {"skipped", "review", "prepared"} or adoption:
+    prior_block = item.get("last_result", {}).get("block_kind")
+    if prior_block in MANUAL_BLOCKS and target not in {"blocked", "preview_partial"} and not record.get("resume_evidence"):
+        raise ValueError("resuming non-transient block requires evidence of changed condition or explicit user instruction")
+    if target in {"blocked", "preview_partial"}:
+        if prior_block in MANUAL_BLOCKS and record.get("block_kind") == "transient" and not record.get("resume_evidence"):
+            raise ValueError("changing manual block to transient requires resume_evidence")
+        fields.update(block_fields(record))
+    if target in {"skipped", "review", "prepared", "preview_partial"} or adoption:
         rules = read_json(ROOT / "references/filters.json")
         valid_rules = {rule["id"] for rule in rules["rules"]}
         if record.get("rule_id") not in valid_rules or record.get("rule_version") != rules["version"]:
             raise ValueError("current filter rule ID/version required")
-    if target == "prepared":
+    if target in {"prepared", "preview_partial"}:
         if record.get("x_verified") is not True or not record.get("relevance"):
             raise ValueError("original-X verification and concrete audience relevance required")
         check_task(record, item)
-        fields = event_fields(state, status_id, record)
-    if target == "previewed":
+        fields.update(event_fields(state, status_id, record))
+    if target in {"previewed", "preview_partial"}:
         task = check_task(record, item)
-        if task.get("publish_authorized") is not False or task.get("preview_verified") is not True:
-            raise ValueError("preview requires publish_authorized:false and completed preview QA")
+        fields.update(preview_fields(task, record, partial=target == "preview_partial"))
         if item.get("source_changed") and record.get("source_change_reviewed") is not True:
             raise ValueError("changed source requires review before preview")
     if target == "submitting":
@@ -288,6 +375,20 @@ def mark(state, status_id, record, operations=None):
         if not enabled and not override:
             raise ValueError("chat_preview mode forbids backend submission without a new explicit user override")
         task = check_task(record, item)
+        if operations.get("mode") == "publish":
+            if not within_publish_scope(item, operations):
+                raise ValueError("post is outside authorized new-post scope; no historical backfill")
+            if task.get("admin_scope") != operations.get("admin_scope", "vn") or task.get("target_language") != operations.get("production_language", "vi"):
+                raise ValueError("task destination differs from current publishing authorization")
+            if task.get("admin_scope") == "total":
+                if task.get("country_post") != operations.get("country_post") or not task.get("country_post"):
+                    raise ValueError("country_post must match authorized distribution")
+                qa = task.get("publish_qa", {})
+                if any(qa.get(k) is not True for k in ("source_verified", "text_verified", "media_verified")):
+                    raise ValueError("Global publish requires source/text/media QA")
+                posted = aware_time(task.get("source_posted_at"), "source_posted_at")
+                if posted < aware_time(operations["publish_since"], "publish_since"):
+                    raise ValueError("original X timestamp predates publishing authorization")
         if task.get("publish_authorized") is not True:
             raise ValueError("task lacks publish authorization")
         if item.get("source_changed") and record.get("source_change_reviewed") is not True:
@@ -297,9 +398,13 @@ def mark(state, status_id, record, operations=None):
         item["newsfeed_id"] = str(task["newsfeed_id"])
     if record.get("source_change_reviewed") is True:
         item["source_changed"] = False
-    if target == "prepared":
-        item.update(fields)
-    event = {**record, "at": now(), "previous_status": previous}
+    if record.get("task_path"):
+        item["task_path"] = record["task_path"]
+    item.pop("retry_after", None)  # New records own retry policy; discard obsolete legacy fallback.
+    for key in ("event_key", "key_facts", "event_relation", "incremental_facts", "related_status_ids", "event_at", "preview_progress"):
+        if key in fields:
+            item[key] = fields[key]
+    event = {**record, **fields, "at": now(), "previous_status": previous}
     item["status"] = target
     item["history"].append(event)
     item["last_result"] = event

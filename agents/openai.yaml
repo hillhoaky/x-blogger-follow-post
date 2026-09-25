@@ -1,4 +1,4 @@
 interface:
-  display_name: "X博主跟随发帖"
-  short_description: "RSS发现博主新帖，筛选并改写为越南文，在IFXData越南版发布"
-  default_prompt: "使用 $x-blogger-follow-post 检查 fxtrader 的 RSS 新帖，按 filters.json v3 过滤中国股市、中国内部政治、中国公司动态和其他低相关内容；国际政治、中美经贸关系、外交访问及领导人抵达/迎接礼仪保留为候选。按当前 chat_preview 模式展示中文训练稿，遵守图片语言、去水印和 QA 规则，暂不提交 IFXData。"
+  display_name: "IFXData X 跟帖助手"
+  short_description: "RSS发现X新帖，核对筛选与图文改写，支持中文预览及授权后IFXData发布"
+  default_prompt: "使用 $x-blogger-follow-post 检查配置来源的 RSS 新帖，核对精确 X 原帖，按 filters.json 筛选并做事件去重。遵守当前配置的预览或发布模式、目标语言、下发地区及授权起点；默认只生成中文训练预览，实际发布须已有明确授权。"
