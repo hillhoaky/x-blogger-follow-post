@@ -12,7 +12,7 @@ RSS 发现更新 → 对应 X 原帖 → 过滤 → 越南文改写与图片 PS 
 已启用任务每轮只运行 `scripts/patrol.py --output-root <当前任务绝对路径>/outputs`。脚本先查本地日报日期，再做一次 RSS 条件请求，只返回新 ID、到期未完成项或新故障。`action:idle` 即安静结束，不读取其余参考、完整账本、浏览器或后台；同一任务已读规则无需逐轮重读，规则更新或有实际工作时按需读取。
 
 - `reports_first`：按返回日期先运行 `daily_report.py`（延迟项加 `--delayed`），逐日展示摘要与报告链接；通过 `patrol.py --output-root ... --ack-report YYYY-MM-DD` 记录本任务已展示日期，然后再运行巡航入口检查 RSS。已有报告无需重复生成。
-- `work`：读取 [operations.md](references/operations.md) 和本次处理所需参考，按下文完成新帖/到期未完成项。事件去重时再用 `rss_queue.py queue` 读取事件资料。
+- `work`：读取 [operations.md](references/operations.md) 和本次处理所需参考，按 [model-routing.md](references/model-routing.md) 为每条候选选一次执行模型，再按下文完成新帖/到期未完成项。事件去重时再用 `rss_queue.py queue` 读取事件资料。
 - `notice`：仅告知新故障、恢复或需要用户处理的事项。原有故障未变化保持安静；日志留给日报。
 - 已有 `baseline/skipped/previewed/published` ID 的 RSS 字段变动只更新缓存，不自动打开 X、不作为新稿或修订任务。用户明确要求复核/改稿时才处理旧帖。
 
@@ -32,6 +32,7 @@ RSS 发现更新 → 对应 X 原帖 → 过滤 → 越南文改写与图片 PS 
 - RSS 故障、空 feed、解析失败是检测异常，不等于没有新帖；不得改用 X 主页探测。
 - 按 `博主 + X status ID` 去重，并按 [operations.md](references/operations.md) 做语义事件去重。发现、预览、实际发布分别入账；失败不丢弃。重复事件没有新事实就跳过，有新数据/官方确认/实质进展才作为更新；同一帖子修订不自动重发。
 - 跨任务复用固定状态路径，单一发帖执行者。脚本文件锁只保护账本写入，不能代替执行者协调。
+- 保持一个编排者串行处理候选。编排者负责巡航、路由和所有账本写入；内部模型执行者只处理分配给它的一条帖子并返回结构化结果，不能另建用户任务、定时器或独立账本。
 
 ## 2. 原帖核对与过滤
 
