@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -116,14 +117,22 @@ def fetch_feed(url, state):
         for name, key in [("If-None-Match", "etag"), ("If-Modified-Since", "last_modified")]:
             if state.get(key):
                 headers[name] = state[key]
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
-            data = response.read(MAX_FEED + 1)
-            return data, {"etag": response.headers.get("ETag"), "last_modified": response.headers.get("Last-Modified")}
-    except urllib.error.HTTPError as exc:
-        if exc.code == 304 and state:
-            return None, {}
-        raise
+    request = urllib.request.Request(url, headers=headers)
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = response.read(MAX_FEED + 1)
+                return data, {"etag": response.headers.get("ETag"), "last_modified": response.headers.get("Last-Modified")}
+        except urllib.error.HTTPError as exc:
+            if exc.code == 304 and state:
+                return None, {}
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError):
+            if attempt:
+                raise
+            # DNS and connection failures can be momentary. The operations
+            # contract permits one retry and otherwise preserves the ledger.
+            time.sleep(1)
 
 
 def ingest(state, source, items, issues, latest=0):

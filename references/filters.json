@@ -146,6 +146,12 @@
       "rule": "CN_COMPANY"
     },
     {
+      "source": "华为余承东巡店并宣传鸿蒙智行及旗下汽车品牌业务动态",
+      "status_id": "2103125138900426776",
+      "decision": "skip",
+      "rule": "CN_COMPANY"
+    },
+    {
       "source": "A股收盘，上证指数上涨",
       "decision": "skip",
       "rule": "CN_EQUITY"

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.dont_write_bytecode = True
 import rss_queue as queue
@@ -29,6 +30,28 @@ def ingest(state, ids, latest=0, body="news"):
 
 
 class WorkflowChecks(unittest.TestCase):
+    def test_feed_fetch_retries_one_transient_network_failure(self):
+        class Response:
+            headers = {"ETag": "test-etag", "Last-Modified": None}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, _limit):
+                return b"<rss/>"
+
+        transient = queue.urllib.error.URLError("temporary DNS failure")
+        with mock.patch.object(queue.urllib.request, "urlopen", side_effect=[transient, Response()]) as opened, \
+             mock.patch.object(queue.time, "sleep") as wait:
+            data, headers = queue.fetch_feed(SOURCE["feed_url"], None)
+        self.assertEqual(data, b"<rss/>")
+        self.assertEqual(headers["etag"], "test-etag")
+        self.assertEqual(opened.call_count, 2)
+        wait.assert_called_once_with(1)
+
     def test_preview_mode_blocks_accidental_submission(self):
         state, _ = ingest(None, [100], latest=1)
         with tempfile.TemporaryDirectory() as temp:
